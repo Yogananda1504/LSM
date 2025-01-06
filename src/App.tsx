@@ -18,7 +18,7 @@ interface Conversation {
 
 // Initialize the LangFlow client with proxy URL
 const token = import.meta.env.VITE_LANGFLOW_TOKEN;
-const client = new LangflowClient('/api/langflow', token);
+const client = new LangflowClient('https://api.langflow.astra.datastax.com', token);
 
 function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);

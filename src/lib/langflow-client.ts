@@ -1,7 +1,7 @@
 import { LangflowResponse } from './types';
 
 export class LangflowClient {
-  constructor(private baseURL: string, private applicationToken: string) {
+  constructor(private baseURL: string = '/api', private applicationToken: string) {
     if (!baseURL) throw new Error('API base URL is required');
     if (!applicationToken) throw new Error('Please provide your LangFlow token in the .env file (VITE_LANGFLOW_TOKEN)');
   }
@@ -24,6 +24,7 @@ export class LangflowClient {
       const response = await fetch(url, {
         method: 'POST',
         credentials: 'include',
+        // mode: 'no-cors',
         headers: {
           "Authorization": `Bearer ${this.applicationToken}`,
           "Content-Type": "application/json",
@@ -34,6 +35,7 @@ export class LangflowClient {
       });
 
       const responseData = await this.validateJsonResponse(response);
+      console.log('Response:', responseData);
       if (!response.ok) {
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
@@ -56,7 +58,7 @@ export class LangflowClient {
       throw new Error('flowId, langflowId, and inputValue are required');
     }
 
-    const endpoint = `/lf/${langflowId}/api/v1/run/${flowId}`;
+    const endpoint = `/langflow/lf/${langflowId}/api/v1/run/${flowId}`;
     return this.post(endpoint, {
       input_value: inputValue,
       input_type: inputType,
