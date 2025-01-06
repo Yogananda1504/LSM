@@ -1,8 +1,7 @@
 
-# ...existing code...
+
 [[redirects]]
-  from = "/lf/*"
-  to = "https://your-backend.com/lf/:splat"
+  from = "/*"
+  to = "/"
   status = 200
-  force = true
 # ...existing code...
