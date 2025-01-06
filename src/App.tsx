@@ -2,98 +2,205 @@ import React, { useState } from 'react';
 import { LangflowClient } from './lib/langflow-client';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Eraser, Sparkles } from 'lucide-react';
 import { API_CONFIG } from './lib/config';
 import { Message } from './lib/types';
+import { ConversationsList } from './components/ConversationsList';
+
+type ExtendedMessage = Message & { imageSrc?: string };
+
+interface Conversation {
+  id: string;
+  title: string;
+  timestamp: Date;
+  messages: ExtendedMessage[];
+}
 
 // Initialize the LangFlow client with proxy URL
 const token = import.meta.env.VITE_LANGFLOW_TOKEN;
 const client = new LangflowClient('/api/langflow', token);
 
 function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSendMessage = async (message: string) => {
+  const activeConversation = conversations.find(c => c.id === activeConversationId);
+  const messages = activeConversation?.messages || [];
+
+  const createNewConversation = () => {
+    const newConversation: Conversation = {
+      id: Date.now().toString(),
+      title: 'New Conversation',
+      timestamp: new Date(),
+      messages: []
+    };
+    setConversations(prev => [newConversation, ...prev]);
+    setActiveConversationId(newConversation.id);
+  };
+
+  const handleSendMessage = async (message: string, imageSrc?: string) => {
+    if (!activeConversationId) {
+      createNewConversation();
+    }
+
     try {
-      // Validate input
-      if (!message.trim()) return;
-
-      // Add user message to chat
-      setMessages(prev => [...prev, { text: message, isBot: false }]);
       setIsLoading(true);
+      // Add user message
+      const userMessage = { text: message, isBot: false, imageSrc };
+      updateConversationMessages(userMessage);
 
-      // Send message to LangFlow
-      const response = await client.runFlow(
-        API_CONFIG.FLOW_ID,
-        API_CONFIG.LANGFLOW_ID,
-        message
-      );
-
-      // Validate response structure
+      // Send to API and handle response
+      const response = await client.runFlow(API_CONFIG.FLOW_ID, API_CONFIG.LANGFLOW_ID, message);
+      
       if (!response?.outputs?.[0]?.outputs?.[0]?.outputs?.message?.message?.text) {
         throw new Error('Invalid response format from API');
       }
 
-      // Extract bot response
-      const botMessage = response.outputs[0].outputs[0].outputs.message.message.text;
-      
-      // Add bot response to chat
-      setMessages(prev => [...prev, { text: botMessage, isBot: true }]);
+      const botMessage = {
+        text: response.outputs[0].outputs[0].outputs.message.message.text,
+        isBot: true
+      };
+      updateConversationMessages(botMessage);
+
+      // Update conversation title if it's the first message
+      if (activeConversation?.messages.length === 0) {
+        updateConversationTitle(message);
+      }
     } catch (error) {
-      console.error('Error sending message:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setMessages(prev => [...prev, { 
-        text: `Sorry, there was an error: ${errorMessage}`,
-        isBot: true 
-      }]);
+      console.error('Error:', error);
+      const errorMessage = {
+        text: `Sorry, there was an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isBot: true
+      };
+      updateConversationMessages(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <header className="bg-white shadow-md">
-        <div className="max-w-4xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-4">
-            <MessageSquare className="text-blue-600" size={24} />
-            <h1 className="text-2xl font-bold text-gray-800">AI Chat Assistant</h1>
-          </div>
-        </div>
-      </header>
+  const updateConversationMessages = (message: ExtendedMessage) => {
+    setConversations(prev => prev.map(conv => 
+      conv.id === activeConversationId
+        ? { ...conv, messages: [...conv.messages, message] }
+        : conv
+    ));
+  };
 
-      <main className="flex-1 max-w-4xl w-full mx-auto p-6 flex flex-col">
-        <div className="flex-1 space-y-6 mb-6">
-          {messages.map((message, index) => (
-            <ChatMessage
-              key={index}
-              message={message.text}
-              isBot={message.isBot}
-            />
-          ))}
-          {isLoading && (
-            <ChatMessage
-              message=""
-              isBot={true}
-              isLoading={true}
-            />
-          )}
-          {messages.length === 0 && (
-            <div className="text-center text-gray-500 mt-8">
-              <MessageSquare className="mx-auto mb-3 text-gray-400" size={48} />
-              <p>Send a message to start the conversation!</p>
+  const updateConversationTitle = (firstMessage: string) => {
+    setConversations(prev => prev.map(conv =>
+      conv.id === activeConversationId
+        ? { ...conv, title: firstMessage.slice(0, 30) + (firstMessage.length > 30 ? '...' : '') }
+        : conv
+    ));
+  };
+
+  const handleDeleteConversation = (id: string) => {
+    setConversations(prev => prev.filter(conv => conv.id !== id));
+    if (activeConversationId === id) {
+      setActiveConversationId(null);
+    }
+  };
+
+  const handleClearMessages = (id: string) => {
+    setConversations(prev => prev.map(conv =>
+      conv.id === id
+        ? { ...conv, messages: [], title: 'New Conversation' }
+        : conv
+    ));
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex">
+      <ConversationsList
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        onSelectConversation={setActiveConversationId}
+        onNewConversation={createNewConversation}
+        onDeleteConversation={handleDeleteConversation}
+        onClearMessages={handleClearMessages}
+      />
+      
+      <div className="flex-1 flex flex-col h-screen max-h-screen overflow-hidden">
+        <header className="bg-gradient-to-r from-white via-blue-50 to-white border-b border-blue-100 shadow-sm flex-shrink-0">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+            <div className="flex items-center gap-3 sm:gap-6 pl-12 sm:pl-8">
+              <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                <div className="relative hidden sm:block">
+                  <MessageSquare className="text-blue-600 transform transition-transform hover:scale-110" size={28} />
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-gray-900 bg-clip-text text-transparent truncate">
+                    Chatbot Assistant
+                  </h1>
+                  <p className="text-xs text-gray-500 flex items-center gap-1 hidden sm:flex">
+                    <Sparkles size={12} className="text-yellow-500" />
+                    Powered by AI
+                  </p>
+                </div>
+              </div>
+              
+              {activeConversationId && (
+                <button
+                  onClick={() => handleClearMessages(activeConversationId)}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-sm text-yellow-600 hover:text-yellow-700 
+                    hover:bg-yellow-50 rounded-full transition-all duration-200 group shrink-0"
+                >
+                  <Eraser size={16} className="transform transition-transform group-hover:rotate-12" />
+                  <span className="font-medium hidden sm:inline">Clear chat</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6">
+            <div className="max-w-4xl mx-auto py-4 sm:py-6">
+              {activeConversationId ? (
+                <div className="space-y-6 pb-32">
+                  {messages.map((message, index) => (
+                    <ChatMessage
+                      key={index}
+                      message={message.text}
+                      isBot={message.isBot}
+                      imageSrc={message.imageSrc}
+                    />
+                  ))}
+                  {isLoading && (
+                    <ChatMessage
+                      message=""
+                      isBot={true}
+                      isLoading={true}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <button
+                    onClick={createNewConversation}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Start New Conversation
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {activeConversationId && (
+            <div className="flex-shrink-0 bg-gradient-to-t from-gray-100 to-transparent pt-4 sm:pt-6 pb-4 sm:pb-6 px-4 sm:px-6">
+              <div className="max-w-4xl mx-auto">
+                <ChatInput
+                  onSendMessage={handleSendMessage}
+                  disabled={isLoading}
+                />
+              </div>
             </div>
           )}
-        </div>
-
-        <div className="sticky bottom-0 bg-gray-100 pt-6">
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            disabled={isLoading}
-          />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
